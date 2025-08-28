@@ -225,8 +225,10 @@
 
 .board {
   display: grid;
-  grid-template-columns: repeat(3, 96px);
-  grid-template-rows: repeat(3, 96px);
+  /* default cell size configured via CSS variable; can be overridden by media query */
+  --cell-size: 96px;
+  grid-template-columns: repeat(var(--board-size, 3), var(--cell-size, 96px));
+  grid-template-rows: repeat(var(--board-size, 3), var(--cell-size, 96px));
   gap: 8px;
   margin-top: 8px;
   user-select: none;
@@ -238,8 +240,8 @@
 }
 
 .cell {
-  width: 96px;
-  height: 96px;
+  width: var(--cell-size, 96px);
+  height: var(--cell-size, 96px);
   display: grid;
   place-items: center;
   background: var(--bg-primary);
@@ -294,12 +296,10 @@
 /* Responsive design for mobile */
 @media (max-width: 480px) {
   .board {
-    grid-template-columns: repeat(3, 84px);
-    grid-template-rows: repeat(3, 84px);
+    /* shrink cells on smaller screens */
+    --cell-size: 84px;
   }
   .cell {
-    width: 84px;
-    height: 84px;
     font-size: 36px;
   }
 }

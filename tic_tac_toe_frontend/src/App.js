@@ -59,15 +59,49 @@ const Modes = {
 /**
  * Utilities
  */
-function calculateWinner(squares) {
-  const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], // cols
-    [0, 4, 8], [2, 4, 6], // diags
-  ];
-  for (const [a, b, c] of lines) {
-    if (squares[a] && squares[a] === squares[b] && squares[a] === squares[c]) {
-      return { winner: squares[a], line: [a, b, c] };
+function emptyBoard(size) {
+  return Array(size * size).fill(null);
+}
+
+function buildWinningLines(size) {
+  const lines = [];
+
+  // Rows
+  for (let r = 0; r < size; r++) {
+    const start = r * size;
+    const row = [];
+    for (let c = 0; c < size; c++) row.push(start + c);
+    lines.push(row);
+  }
+
+  // Columns
+  for (let c = 0; c < size; c++) {
+    const col = [];
+    for (let r = 0; r < size; r++) col.push(r * size + c);
+    lines.push(col);
+  }
+
+  // Main diagonal
+  const diag1 = [];
+  for (let i = 0; i < size; i++) diag1.push(i * (size + 1));
+  lines.push(diag1);
+
+  // Anti diagonal
+  const diag2 = [];
+  for (let i = 1; i <= size; i++) diag2.push(i * (size - 1));
+  lines.push(diag2);
+
+  return lines;
+}
+
+function calculateWinner(squares, size) {
+  const lines = buildWinningLines(size);
+  for (const line of lines) {
+    const [first, ...rest] = line;
+    const token = squares[first];
+    if (!token) continue;
+    if (rest.every((idx) => squares[idx] === token)) {
+      return { winner: token, line };
     }
   }
   return { winner: null, line: [] };
@@ -80,7 +114,7 @@ function isBoardFull(squares) {
 /**
  * Very basic AI: tries to win in one move, otherwise block, otherwise random.
  */
-function aiMove(squares, aiPlayer) {
+function aiMove(squares, aiPlayer, size) {
   const human = aiPlayer === Players.X ? Players.O : Players.X;
   const emptyIndices = squares.map((v, i) => (v ? null : i)).filter(v => v !== null);
 
@@ -89,7 +123,7 @@ function aiMove(squares, aiPlayer) {
     for (const idx of emptyIndices) {
       const trial = squares.slice();
       trial[idx] = player;
-      if (calculateWinner(trial).winner === player) return idx;
+      if (calculateWinner(trial, size).winner === player) return idx;
     }
     return null;
   };
@@ -130,13 +164,18 @@ function Footer() {
 function Game() {
   /**
    * Game holds high-level state: board, current player, mode, scores, and controls.
+   * Now supports dynamic board sizes (3x3, 4x4, 5x5).
    */
-  const [squares, setSquares] = useState(Array(9).fill(null));
+  const BOARD_SIZES = [3, 4, 5];
+
+  const [boardSize, setBoardSize] = useState(3);
+  const [squares, setSquares] = useState(() => emptyBoard(3));
   const [xIsNext, setXIsNext] = useState(true);
   const [mode, setMode] = useState(Modes.HUMAN);
   const [aiPlaysAs, setAiPlaysAs] = useState(Players.O);
   const [scores, setScores] = useState({ X: 0, O: 0, draws: 0 });
-  const { winner, line } = calculateWinner(squares);
+
+  const { winner, line } = calculateWinner(squares, boardSize);
   const currentPlayer = xIsNext ? Players.X : Players.O;
 
   const gameOver = Boolean(winner) || isBoardFull(squares);
@@ -147,13 +186,13 @@ function Game() {
       const aiTurn = currentPlayer === aiPlaysAs;
       if (aiTurn) {
         const t = setTimeout(() => {
-          const idx = aiMove(squares, aiPlaysAs);
+          const idx = aiMove(squares, aiPlaysAs, boardSize);
           if (idx !== null) handleMove(idx);
         }, 400); // small delay for UX
         return () => clearTimeout(t);
       }
     }
-  }, [mode, aiPlaysAs, currentPlayer, squares, gameOver]);
+  }, [mode, aiPlaysAs, currentPlayer, squares, gameOver, boardSize]);
 
   useEffect(() => {
     // Update scores upon game end
@@ -183,14 +222,14 @@ function Game() {
   // PUBLIC_INTERFACE
   const resetBoard = () => {
     /** Reset board to start a new round (scores persist). */
-    setSquares(Array(9).fill(null));
+    setSquares(emptyBoard(boardSize));
     setXIsNext(true);
   };
 
   // PUBLIC_INTERFACE
   const resetAll = () => {
     /** Reset board and scores. */
-    setSquares(Array(9).fill(null));
+    setSquares(emptyBoard(boardSize));
     setXIsNext(true);
     setScores({ X: 0, O: 0, draws: 0 });
   };
@@ -209,6 +248,14 @@ function Game() {
     resetBoard();
   };
 
+  // PUBLIC_INTERFACE
+  const changeBoardSize = (size) => {
+    /** Change the board size, resetting the current round (scores persist). */
+    setBoardSize(size);
+    setSquares(emptyBoard(size));
+    setXIsNext(true);
+  };
+
   const statusText = (() => {
     if (winner) return `Winner: ${winner}`;
     if (!winner && isBoardFull(squares)) return "It's a draw!";
@@ -225,6 +272,9 @@ function Game() {
           onChangeAiSide={changeAiSide}
           onResetRound={resetBoard}
           onResetAll={resetAll}
+          boardSize={boardSize}
+          boardSizes={BOARD_SIZES}
+          onChangeBoardSize={changeBoardSize}
         />
         <Scoreboard scores={scores} />
       </div>
@@ -236,6 +286,7 @@ function Game() {
         onClick={onCellClick}
         winningLine={line}
         disabled={mode === Modes.AI && currentPlayer === aiPlaysAs}
+        size={boardSize}
       />
       {gameOver && (
         <div className="result">
@@ -250,8 +301,18 @@ function Game() {
 }
 
 // PUBLIC_INTERFACE
-function GameControls({ mode, aiPlaysAs, onChangeMode, onChangeAiSide, onResetRound, onResetAll }) {
-  /** Renders controls to switch mode, AI side, and reset game or round. */
+function GameControls({
+  mode,
+  aiPlaysAs,
+  onChangeMode,
+  onChangeAiSide,
+  onResetRound,
+  onResetAll,
+  boardSize,
+  boardSizes,
+  onChangeBoardSize
+}) {
+  /** Renders controls to switch mode, AI side, board size, and reset game or round. */
   return (
     <div className="game-controls">
       <div className="row">
@@ -293,6 +354,22 @@ function GameControls({ mode, aiPlaysAs, onChangeMode, onChangeAiSide, onResetRo
       )}
 
       <div className="row">
+        <label className="label">Board Size</label>
+        <div className="btn-group" role="group" aria-label="Board size selector">
+          {boardSizes.map((s) => (
+            <button
+              key={s}
+              className={`btn ${boardSize === s ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => onChangeBoardSize(s)}
+              aria-label={`Set board size to ${s} by ${s}`}
+            >
+              {s}×{s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="row">
         <div className="btn-group">
           <button className="btn btn-outline" onClick={onResetRound}>Reset Round</button>
           <button className="btn btn-danger" onClick={onResetAll}>Reset All</button>
@@ -315,13 +392,14 @@ function Scoreboard({ scores }) {
 }
 
 // PUBLIC_INTERFACE
-function Board({ squares, onClick, winningLine, disabled }) {
-  /** Board renders 3x3 cells and highlights the winning line. */
+function Board({ squares, onClick, winningLine, disabled, size }) {
+  /** Board renders NxN cells and highlights the winning line. */
   return (
     <div
       className={`board ${disabled ? 'disabled' : ''}`}
       role="grid"
       aria-label="Tic Tac Toe board"
+      style={{ '--board-size': size }}
     >
       {squares.map((value, idx) => (
         <Cell
@@ -339,7 +417,7 @@ function Board({ squares, onClick, winningLine, disabled }) {
 
 // PUBLIC_INTERFACE
 function Cell({ value, onClick, highlight, disabled, index }) {
-  /** A single cell in the 3x3 grid. */
+  /** A single cell in the grid. */
   return (
     <button
       className={`cell ${highlight ? 'highlight' : ''}`}
